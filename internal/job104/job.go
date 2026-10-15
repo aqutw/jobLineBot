@@ -64,10 +64,22 @@ type Fetcher struct {
 	next  time.Time
 }
 
-func New() (*Fetcher, error) {
-	client, err := tlsclient.NewHttpClient(tlsclient.NewNoopLogger(), tlsclient.WithTimeoutSeconds(12), tlsclient.WithClientProfile(profiles.Chrome_124), tlsclient.WithRandomTLSExtensionOrder(), tlsclient.WithNotFollowRedirects())
+func New() (*Fetcher, error) { return NewWithProxy("") }
+
+// NewWithProxy optionally routes only 104 retrieval through a deployment-owned proxy.
+// LLM and LINE traffic keep their normal direct transports.
+func NewWithProxy(proxyURL string) (*Fetcher, error) {
+	options := []tlsclient.HttpClientOption{tlsclient.WithTimeoutSeconds(12), tlsclient.WithClientProfile(profiles.Chrome_131), tlsclient.WithRandomTLSExtensionOrder(), tlsclient.WithNotFollowRedirects()}
+	if proxyURL != "" {
+		u, err := url.Parse(proxyURL)
+		if err != nil || u.Hostname() == "" || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || (u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "socks5" && u.Scheme != "socks5h") {
+			return nil, fmt.Errorf("invalid JOB104_PROXY_URL")
+		}
+		options = append(options, tlsclient.WithProxyUrl(proxyURL))
+	}
+	client, err := tlsclient.NewHttpClient(tlsclient.NewNoopLogger(), options...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("104 transport configuration invalid")
 	}
 	f := &Fetcher{cache: make(map[string]cached)}
 	f.Get = func(ctx context.Context, rawURL string) ([]byte, error) {
@@ -75,7 +87,7 @@ func New() (*Fetcher, error) {
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 		req.Header.Set("Referer", "https://www.104.com.tw/jobs/search/")
 		req.Header.Set("Accept-Language", "zh-TW,zh;q=0.9")
 		req.Header.Set("Accept", "text/html,application/json;q=0.9,*/*;q=0.8")
@@ -85,7 +97,7 @@ func New() (*Fetcher, error) {
 		}
 		resp, err := client.Do(req)
 		if err != nil {
-			slog.Warn("job104 transport failed", "path", req.URL.Path, "error", err.Error())
+			slog.Warn("job104 transport failed", "path", req.URL.Path, "error_type", fmt.Sprintf("%T", err))
 			return nil, ErrUnavailable
 		}
 		defer resp.Body.Close()

@@ -19,7 +19,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	fetcher, err := job104.New()
+	fetcher, err := job104.NewWithProxy(os.Getenv("JOB104_PROXY_URL"))
 	if err != nil {
 		logger.Error("fetcher initialization failed")
 		os.Exit(1)

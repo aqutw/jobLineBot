@@ -17,7 +17,7 @@ LINE → Go 驗證簽章 → 有界記憶體佇列 → Go 擷取104 HTML
           已清理職缺文件 → OpenRouter LLM → 分析、模擬題與答案 → LINE
 ```
 
-模型未配置 tools、web search 或 plugins，不會自行開網址。資料來源、抓取時間、清理本文及實際回傳模型都可由受保護 HTTP API 檢查。104 抓取以 Chrome 124 TLS 指紋及 Referer 實作，參考使用者提供的 `_job104_common.sh` / `get_job_detail.sh`。**不是將網址直接交給 LLM**。
+模型未配置 tools、web search 或 plugins，不會自行開網址。資料來源、抓取時間、清理本文及實際回傳模型都可由受保護 HTTP API 檢查。104 抓取以 Chrome 131 TLS 指紋及 Referer 實作，參考使用者提供的 `_job104_common.sh` / `get_job_detail.sh`。**不是將網址直接交給 LLM**。
 
 ## 本機啟動
 
@@ -44,6 +44,7 @@ macOS 若使用舊 Go 遇到 `missing LC_UUID`，可用 `go test -race -ldflags=
 | LINE_CHANNEL_SECRET | **本 bot** Messaging API channel secret |
 | LINE_CHANNEL_ACCESS_TOKEN | **本 bot** access token |
 | PORT | 預設10000；Render 自動提供 |
+| JOB104_PROXY_URL | 選用；104 擷取專用的 HTTP/HTTPS/SOCKS5 代理，可含驗證帳密；僅存環境變數 |
 
 ## HTTP API
 
@@ -93,3 +94,7 @@ LIVE_JOB104=1 go test -v -run TestLiveJob104 ./internal/job104
 - 無個人履歷、對話記憶或履歷符合度評分。模型推論與模擬答案應由使用者依經驗確認。
 
 實作參考：[OpenRouter API](https://openrouter.ai/docs/api-reference/overview)、[LINE Webhook](https://developers.line.biz/en/docs/messaging-api/receiving-messages/)、[Render Blueprint](https://render.com/docs/blueprint-spec)。
+
+### Render 擷取104回403時
+
+實測發現104對目前Render服務的HTML及職缺內容API請求皆回HTTP403；本機相同job_id可取得。健康檢查的憑證設定旗標不代表104連線已成功。可在Render設定自有、能正常存取104的代理 `JOB104_PROXY_URL`，例如 `http://user:password@proxy-host:port`。此代理只用於Go的104擷取，OpenRouter及LINE不經代理；TLS驗證仍開啟。不要將代理帳密提交Git，也不要使用未知的公開代理。未取得有效職缺時，服務會如實回錯誤，不會交給模型自行開網址或捏造資料。

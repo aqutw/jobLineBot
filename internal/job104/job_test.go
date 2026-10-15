@@ -68,3 +68,16 @@ func TestLiveJob104(t *testing.T) {
 	}
 	t.Logf("title=%s source=%s characters=%d", doc.Title, doc.Source, len([]rune(doc.Text)))
 }
+
+func TestProxyConfiguration(t *testing.T) {
+	for _, input := range []string{"", "http://user:pass@127.0.0.1:8888", "https://proxy.example:443", "socks5://127.0.0.1:1080"} {
+		if _, err := NewWithProxy(input); err != nil {
+			t.Fatalf("valid proxy configuration rejected: %v", err)
+		}
+	}
+	for _, input := range []string{"ftp://user:secret@proxy.example", "http://", "http://proxy.example/path?token=secret"} {
+		if _, err := NewWithProxy(input); err == nil || strings.Contains(err.Error(), "secret") {
+			t.Fatal("invalid proxy accepted or credential disclosed")
+		}
+	}
+}
