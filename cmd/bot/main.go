@@ -27,12 +27,12 @@ func main() {
 	model := bot.NewModel(os.Getenv("OPENROUTER_API_KEY"), os.Getenv("OPENROUTER_MODEL"))
 	lineClient := line.New(os.Getenv("LINE_CHANNEL_ACCESS_TOKEN"))
 	server := web.New(ctx, &bot.Service{Fetcher: fetcher, Model: model}, lineClient, web.Config{
-		Secret: os.Getenv("LINE_CHANNEL_SECRET"), LINEEnabled: os.Getenv("LINE_CHANNEL_SECRET") != "" && lineClient.Token != "", ModelEnabled: model.Key != "", DemoToken: os.Getenv("API_TOKEN")}, logger)
+		Secret: os.Getenv("LINE_CHANNEL_SECRET"), LINEEnabled: os.Getenv("LINE_CHANNEL_SECRET") != "" && lineClient.Token != "", ModelEnabled: model.Key != "", APIToken: os.Getenv("API_TOKEN")}, logger)
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "10000"
 	}
-	httpServer := &http.Server{Addr: ":" + port, Handler: server.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 55 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 * 1024}
+	httpServer := &http.Server{Addr: ":" + port, Handler: server.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 155 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 * 1024}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 8*time.Second)

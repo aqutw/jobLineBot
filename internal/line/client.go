@@ -40,13 +40,14 @@ type Event struct {
 	} `json:"message"`
 }
 type Client struct {
-	HTTP  *http.Client
-	Token string
-	URL   string
+	HTTP    *http.Client
+	Token   string
+	URL     string
+	PushURL string
 }
 
 func New(token string) *Client {
-	return &Client{HTTP: &http.Client{Timeout: 8 * time.Second}, Token: token, URL: "https://api.line.me/v2/bot/message/reply"}
+	return &Client{HTTP: &http.Client{Timeout: 8 * time.Second}, Token: token, URL: "https://api.line.me/v2/bot/message/reply", PushURL: "https://api.line.me/v2/bot/message/push"}
 }
 func (c *Client) Reply(ctx context.Context, replyToken, text string) error {
 	if c.Token == "" || replyToken == "" {
@@ -101,4 +102,34 @@ func splitMessages(text string) ([]map[string]string, error) {
 		return nil, fmt.Errorf("LINE reply exceeds five messages")
 	}
 	return out, nil
+}
+
+// Push delivers the completed analysis even when inference outlives a reply token.
+func (c *Client) Push(ctx context.Context, to, text string) error {
+	if c.Token == "" || to == "" {
+		return fmt.Errorf("LINE destination unavailable")
+	}
+	messages, err := splitMessages(text)
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(map[string]any{"to": to, "messages": messages})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.PushURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return fmt.Errorf("LINE push transport failed")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("LINE push HTTP %d", resp.StatusCode)
+	}
+	return nil
 }

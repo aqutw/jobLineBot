@@ -79,13 +79,13 @@ LIVE_JOB104=1 go test -v -run TestLiveJob104 ./internal/job104
 4. Verify，啟用 Use webhook 與 webhook redelivery，關閉預設自動回覆。
 5. 加好友後傳 `8tv2k`，檢查分析與面試題是否送達。
 
-簽章驗證成功後快速 ACK，背景處理，不先消耗 reply token。長文按 LINE 5000 UTF-16 units 上限切為最多5則訊息。
+簽章驗證成功後快速 HTTP ACK，worker 先用 Reply API 回覆處理進度，再於分析完成後以 Push API 傳送結果，避免免費模型耗時超過 reply token 時效。完成推播會使用 LINE 官方帳號的訊息額度。長文按 LINE 5000 UTF-16 units 上限切為最多5則訊息。
 
 ## 限制
 
 - 僅擷取固定104主機與合法 job_id，不追蹤重新導向；防止 URL 形成任意伺服器端請求。
 - 104 每秒至多一個新請求，成功文件快取10分鐘／上限128份。回應最多2 MiB，清理本文最多30000字，截斷時回傳 `truncated=true`。
-- LINE 工作處理時間受 reply token 時效限制；慢速模型或冷啟動可能失敗。HTTP分析有50秒總預算，模型請求上限38秒。
+- LINE 與 HTTP 分析有150秒總預算，模型請求上限120秒。免費模型忙碌或冷啟動仍可能逾時。
 - Free model 可用性、速率與品質取決於 OpenRouter；不自動切換付費模型。
 - LINE 佇列上限16，單 worker；去重20分鐘／2048事件。佇列／快取／去重皆在記憶體，重啟會失去資料。正式可靠投遞需要持久化工作佇列。
 - 不記錄使用者訊息、LINE ID、reply token 或 API key；只記錄匿名服務錯誤。

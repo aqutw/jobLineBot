@@ -39,10 +39,15 @@ func (r *replier) Reply(context.Context, string, string) error {
 	r.done <- true
 	return nil
 }
+func (r *replier) Push(context.Context, string, string) error {
+	r.calls.Add(1)
+	r.done <- true
+	return nil
+}
 func TestAPIAndWebhook(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &replier{done: make(chan bool, 4)}
-	s := New(ctx, &bot.Service{Fetcher: fetch{}, Model: model{}}, r, Config{Secret: "secret", LINEEnabled: true, ModelEnabled: true, DemoToken: "api-token"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s := New(ctx, &bot.Service{Fetcher: fetch{}, Model: model{}}, r, Config{Secret: "secret", LINEEnabled: true, ModelEnabled: true, APIToken: "api-token"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer func() { cancel(); s.Wait() }()
 	h := s.Handler()
 	for _, tc := range []struct {
@@ -59,7 +64,7 @@ func TestAPIAndWebhook(t *testing.T) {
 			t.Fatal(w.Code, w.Body.String())
 		}
 	}
-	payload := []byte(`{"events":[{"type":"message","webhookEventId":"one","replyToken":"reply","message":{"type":"text","text":"8tv2k"}}]}`)
+	payload := []byte(`{"events":[{"type":"message","webhookEventId":"one","replyToken":"reply","source":{"userId":"test-user"},"message":{"type":"text","text":"8tv2k"}}]}`)
 	mac := hmac.New(sha256.New, []byte("secret"))
 	mac.Write(payload)
 	sig := base64.StdEncoding.EncodeToString(mac.Sum(nil))
@@ -81,7 +86,12 @@ func TestAPIAndWebhook(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("no reply")
 	}
-	if r.calls.Load() != 1 {
+	select {
+	case <-r.done:
+	case <-time.After(time.Second):
+		t.Fatal("no push")
+	}
+	if r.calls.Load() != 2 {
 		t.Fatal("duplicate reply")
 	}
 }

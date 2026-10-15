@@ -20,16 +20,16 @@ import (
 
 type Replier interface {
 	Reply(context.Context, string, string) error
+	Push(context.Context, string, string) error
 }
 type Config struct {
 	Secret       string
 	LINEEnabled  bool
 	ModelEnabled bool
-	DemoToken    string
+	APIToken     string
 }
 type job struct {
-	event    line.Event
-	received time.Time
+	event line.Event
 }
 type Server struct {
 	Bot      *bot.Service
@@ -137,7 +137,7 @@ func (s *Server) webhook(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		batch[key] = true
-		jobs = append(jobs, job{event: e, received: now})
+		jobs = append(jobs, job{event: e})
 	}
 	if len(s.seen)+len(jobs) > 2048 || len(s.queue)+len(jobs) > cap(s.queue) {
 		s.mu.Unlock()
@@ -162,23 +162,39 @@ func (s *Server) run() {
 		case <-s.ctx.Done():
 			return
 		case j := <-s.queue:
-			remaining := 52*time.Second - time.Since(j.received)
-			if remaining < 10*time.Second {
+			to := j.event.Source.UserID
+			if j.event.Source.RoomID != "" {
+				to = j.event.Source.RoomID
+			}
+			if j.event.Source.GroupID != "" {
+				to = j.event.Source.GroupID
+			}
+			replyCtx, replyCancel := context.WithTimeout(s.ctx, 8*time.Second)
+			prompt := "已收到職缺，正在整理內容並產生模擬面試題，完成後會傳送結果。"
+			if to == "" {
+				prompt = "無法識別回覆對象，請在與機器人的一對一聊天中重試。"
+			}
+			err := s.LINE.Reply(replyCtx, j.event.ReplyToken, prompt)
+			replyCancel()
+			if err != nil {
+				s.Log.Warn("LINE acknowledgement failed", "error", err.Error())
+			}
+			if to == "" {
 				continue
 			}
-			ctx, cancel := context.WithTimeout(s.ctx, remaining-8*time.Second)
+			ctx, cancel := context.WithTimeout(s.ctx, 150*time.Second)
 			answer := s.answer(ctx, j.event.Message.Text)
 			cancel()
-			replyCtx, replyCancel := context.WithTimeout(s.ctx, 8*time.Second)
-			if err := s.LINE.Reply(replyCtx, j.event.ReplyToken, answer.Text); err != nil {
-				s.Log.Warn("LINE reply failed", "error", err.Error())
+			pushCtx, pushCancel := context.WithTimeout(s.ctx, 8*time.Second)
+			if err := s.LINE.Push(pushCtx, to, answer.Text); err != nil {
+				s.Log.Warn("LINE result delivery failed", "error", err.Error())
 			}
-			replyCancel()
+			pushCancel()
 		}
 	}
 }
 func (s *Server) query(w http.ResponseWriter, r *http.Request) {
-	if s.Config.DemoToken == "" {
+	if s.Config.APIToken == "" {
 		respond(w, 404, map[string]string{"error": "not_found"})
 		return
 	}
@@ -187,7 +203,7 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	a, b := sha256.Sum256([]byte(provided)), sha256.Sum256([]byte(s.Config.DemoToken))
+	a, b := sha256.Sum256([]byte(provided)), sha256.Sum256([]byte(s.Config.APIToken))
 	if subtle.ConstantTimeCompare(a[:], b[:]) != 1 {
 		respond(w, 401, map[string]string{"error": "unauthorized"})
 		return
@@ -219,7 +235,7 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 		respond(w, 400, map[string]string{"error": "job_required_max_2000_characters"})
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 150*time.Second)
 	defer cancel()
 	select {
 	case s.apiSlots <- struct{}{}:
