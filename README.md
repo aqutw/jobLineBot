@@ -120,3 +120,10 @@ go run ./cmd/probe -job 8tv2k
 | `timeout`／`transport_error` | 連線問題；請檢查網路／代理 |
 
 診斷僅含階段、HTTP 狀態、分類及格式驗證後的 CF-Ray，不包含 HTML、cookie、proxy 密碼或 API key。
+
+
+## Chrome擴充功能快照分析
+
+`POST /api/extension/analyze` 為免登入的專用快照API，不需管理token。接受 `snapshot: {id,url,title,company,content,captured_at}` 與 `preferences`；網址必須為canonical104職缺網址、id一致，本文80～40000字、標題／公司最多300字、準備方向2000字，整體請求最多256KB。Go驗證並清理後直接呼叫既有模型，不重新抓104、不接受任意system prompt或模型參數；回傳 `{text,created_at}`，不回傳供應商與憑證。
+
+分析金鑰仍只存在Render環境變數，模型維持 `openrouter/free`。端點不永久保存或記錄快照。匿名使用全服務共用速率限制（burst6，每分鐘補1）及既有2個併發名額。OPTIONS支援合法Chrome擴充功能Origin；CORS不是身分驗證，公開端點的資源限制由伺服器實施。既有 `/api/analyze` 的Bearer驗證與LINE webhook不變。

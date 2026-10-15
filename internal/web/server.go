@@ -32,20 +32,22 @@ type job struct {
 	event line.Event
 }
 type Server struct {
-	Bot      *bot.Service
-	LINE     Replier
-	Config   Config
-	Log      *slog.Logger
-	ctx      context.Context
-	queue    chan job
-	mu       sync.Mutex
-	seen     map[string]time.Time
-	wg       sync.WaitGroup
-	apiSlots chan struct{}
+	Bot       *bot.Service
+	LINE      Replier
+	Config    Config
+	Log       *slog.Logger
+	ctx       context.Context
+	queue     chan job
+	mu        sync.Mutex
+	seen      map[string]time.Time
+	wg        sync.WaitGroup
+	apiSlots  chan struct{}
+	extTokens float64
+	extRefill time.Time
 }
 
 func New(ctx context.Context, service *bot.Service, replier Replier, cfg Config, logger *slog.Logger) *Server {
-	s := &Server{Bot: service, LINE: replier, Config: cfg, Log: logger, ctx: ctx, queue: make(chan job, 16), seen: make(map[string]time.Time), apiSlots: make(chan struct{}, 2)}
+	s := &Server{Bot: service, LINE: replier, Config: cfg, Log: logger, ctx: ctx, queue: make(chan job, 16), seen: make(map[string]time.Time), apiSlots: make(chan struct{}, 2), extTokens: 6, extRefill: time.Now()}
 	s.wg.Add(1)
 	go s.run()
 	return s
@@ -56,6 +58,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("POST /line/webhook", s.webhook)
 	mux.HandleFunc("POST /api/analyze", s.query)
+	mux.HandleFunc("POST /api/extension/analyze", s.extensionQuery)
+	mux.HandleFunc("OPTIONS /api/extension/analyze", s.extensionQuery)
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		io.WriteString(w, homepage)
@@ -74,7 +78,7 @@ func respond(w http.ResponseWriter, status int, value any) {
 }
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	respond(w, 200, map[string]any{"status": "ok", "line_configured": s.Config.LINEEnabled,
-		"openrouter_configured": s.Config.ModelEnabled, "response_mode": "go_fetch_clean_then_llm"})
+		"openrouter_configured": s.Config.ModelEnabled, "extension_analysis": s.Config.ModelEnabled, "response_mode": "go_fetch_clean_then_llm"})
 }
 func eventID(e line.Event) string {
 	if e.ID != "" {
