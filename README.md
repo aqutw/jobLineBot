@@ -98,3 +98,25 @@ LIVE_JOB104=1 go test -v -run TestLiveJob104 ./internal/job104
 ### Render 擷取104回403時
 
 實測發現104對目前Render服務的HTML及職缺內容API請求皆回HTTP403；本機相同job_id可取得。健康檢查的憑證設定旗標不代表104連線已成功。可在Render設定自有、能正常存取104的代理 `JOB104_PROXY_URL`，例如 `http://user:password@proxy-host:port`。此代理只用於Go的104擷取，OpenRouter及LINE不經代理；TLS驗證仍開啟。不要將代理帳密提交Git，也不要使用未知的公開代理。未取得有效職缺時，服務會如實回錯誤，不會交給模型自行開網址或捏造資料。
+
+擷取器現在保留職缺頁與內容 API 之間的第一方 cookie，並區分 HTML 導覽與同站 XHR 的標頭。cookie 僅存於程序記憶體，不使用使用者瀏覽器的登入資料。這能修正需要維持會話的請求；不保證能通過要求 JavaScript 或人工驗證的網站防護。
+
+以相同 Go 擷取器直接檢測，不會呼叫 LLM 或傳送 LINE 訊息：
+
+```bash
+go run ./cmd/probe -job 8tv2k
+```
+
+在本機與部署環境分別執行，成功時回傳標題、擷取方式與字數；失敗時回傳 `diagnostic`。同一份診斷也會出現在受 Bearer token 保護的 `/api/analyze` 錯誤回應中，LINE 聊天仍只顯示一般錯誤訊息。
+
+| diagnostic.reason | 意義 |
+|---|---|
+| `challenge` | 回應帶有官方 `cf-mitigated: challenge` 標頭；需處理網站驗證，不能僅憑此判定封鎖 IP |
+| `forbidden` | HTTP 403，尚無足夠證據判定其防護原因 |
+| `rate_limited` | HTTP 429，不會自動反覆重試 |
+| `not_found` | HTTP 404／410，職缺可能已移除 |
+| `redirect` | 收到重新導向；擷取器仍不自動跟隨 |
+| `invalid_content` | HTTP 200，但職缺欄位或本文不足，不會交給 LLM 分析 |
+| `timeout`／`transport_error` | 連線問題；請檢查網路／代理 |
+
+診斷僅含階段、HTTP 狀態、分類及格式驗證後的 CF-Ray，不包含 HTML、cookie、proxy 密碼或 API key。

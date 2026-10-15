@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/url"
 	"regexp"
@@ -14,9 +13,6 @@ import (
 	"sync"
 	"time"
 
-	http "github.com/bogdanfinn/fhttp"
-	tlsclient "github.com/bogdanfinn/tls-client"
-	"github.com/bogdanfinn/tls-client/profiles"
 	"golang.org/x/net/html"
 )
 
@@ -69,49 +65,11 @@ func New() (*Fetcher, error) { return NewWithProxy("") }
 // NewWithProxy optionally routes only 104 retrieval through a deployment-owned proxy.
 // LLM and LINE traffic keep their normal direct transports.
 func NewWithProxy(proxyURL string) (*Fetcher, error) {
-	options := []tlsclient.HttpClientOption{tlsclient.WithTimeoutSeconds(12), tlsclient.WithClientProfile(profiles.Chrome_131), tlsclient.WithRandomTLSExtensionOrder(), tlsclient.WithNotFollowRedirects()}
-	if proxyURL != "" {
-		u, err := url.Parse(proxyURL)
-		if err != nil || u.Hostname() == "" || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || (u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "socks5" && u.Scheme != "socks5h") {
-			return nil, fmt.Errorf("invalid JOB104_PROXY_URL")
-		}
-		options = append(options, tlsclient.WithProxyUrl(proxyURL))
-	}
-	client, err := tlsclient.NewHttpClient(tlsclient.NewNoopLogger(), options...)
+	client, err := newHTTPClient(proxyURL)
 	if err != nil {
-		return nil, fmt.Errorf("104 transport configuration invalid")
+		return nil, err
 	}
-	f := &Fetcher{cache: make(map[string]cached)}
-	f.Get = func(ctx context.Context, rawURL string) ([]byte, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-		req.Header.Set("Referer", "https://www.104.com.tw/jobs/search/")
-		req.Header.Set("Accept-Language", "zh-TW,zh;q=0.9")
-		req.Header.Set("Accept", "text/html,application/json;q=0.9,*/*;q=0.8")
-		if strings.Contains(req.URL.Path, "/ajax/") {
-			req.Header.Set("Accept", "application/json, text/plain, */*")
-			req.Header.Set("Referer", "https://www.104.com.tw/job/"+strings.TrimPrefix(req.URL.Path, "/job/ajax/content/")+"/")
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			slog.Warn("job104 transport failed", "path", req.URL.Path, "error_type", fmt.Sprintf("%T", err))
-			return nil, ErrUnavailable
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != 200 {
-			slog.Warn("job104 upstream rejected", "path", req.URL.Path, "status", resp.StatusCode)
-			return nil, ErrUnavailable
-		}
-		body, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024+1))
-		if err != nil || len(body) > 2*1024*1024 {
-			return nil, ErrUnavailable
-		}
-		return body, nil
-	}
-	return f, nil
+	return &Fetcher{cache: make(map[string]cached), Get: httpGetter(client)}, nil
 }
 func (f *Fetcher) load(ctx context.Context, u string) ([]byte, error) {
 	// Reserve request slots across concurrent HTTP and LINE requests.
@@ -150,14 +108,14 @@ func (f *Fetcher) Fetch(ctx context.Context, id string) (Document, error) {
 	if len([]rune(doc.Text)) < 80 || doc.Title == "" {
 		body, err = f.load(ctx, "https://www.104.com.tw/job/ajax/content/"+id)
 		if err != nil {
-			return Document{}, ErrUnavailable
+			return Document{}, err
 		}
 		doc.Title, doc.Company, doc.Text = extractAPI(body)
 		doc.Source = "html+104_content_api"
 	}
 	if doc.Title == "" || len([]rune(doc.Text)) < 80 {
 		slog.Warn("job104 content missing", "job_id", id, "bytes", len(body))
-		return Document{}, ErrUnavailable
+		return Document{}, &FetchError{Diagnostic: Diagnostic{Stage: "content_api", Reason: "invalid_content", HTTPStatus: 200}}
 	}
 	runes := []rune(doc.Text)
 	if len(runes) > 30000 {

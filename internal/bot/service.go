@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -25,10 +26,11 @@ type Service struct {
 	Model   Generator
 }
 type Answer struct {
-	Text  string           `json:"text"`
-	Model string           `json:"model,omitempty"`
-	Job   *job104.Document `json:"job,omitempty"`
-	Error string           `json:"error,omitempty"`
+	Text       string             `json:"text"`
+	Model      string             `json:"model,omitempty"`
+	Job        *job104.Document   `json:"job,omitempty"`
+	Error      string             `json:"error,omitempty"`
+	Diagnostic *job104.Diagnostic `json:"diagnostic,omitempty"`
 }
 
 func (s *Service) Answer(ctx context.Context, input, instructions string) Answer {
@@ -38,7 +40,12 @@ func (s *Service) Answer(ctx context.Context, input, instructions string) Answer
 	}
 	doc, err := s.Fetcher.Fetch(ctx, id)
 	if err != nil {
-		return Answer{Text: job104.ErrUnavailable.Error(), Error: "job_unavailable"}
+		answer := Answer{Text: job104.ErrUnavailable.Error(), Error: "job_unavailable"}
+		var failure *job104.FetchError
+		if errors.As(err, &failure) {
+			answer.Diagnostic = &failure.Diagnostic
+		}
+		return answer
 	}
 	text, model, err := s.Model.Generate(ctx, doc, instructions)
 	if err != nil {

@@ -32,6 +32,18 @@ func TestNoModelWithoutDocument(t *testing.T) {
 		}
 	}
 }
+
+func TestChallengeDiagnosticDoesNotReachModel(t *testing.T) {
+	m := &fakeModel{}
+	s := Service{Fetcher: fakeFetch{&job104.FetchError{Diagnostic: job104.Diagnostic{Stage: "content_api", Reason: "challenge", HTTPStatus: 403}}}, Model: m}
+	a := s.Answer(context.Background(), "8tv2k", "")
+	if m.called || a.Error != "job_unavailable" || a.Diagnostic == nil || a.Diagnostic.Reason != "challenge" {
+		t.Fatal("challenge was not safely returned without a model call")
+	}
+	if strings.Contains(a.Text, "HTTP") {
+		t.Fatal("LINE user text should remain separate from API diagnostics")
+	}
+}
 func TestOpenRouterGrounding(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var b map[string]any
