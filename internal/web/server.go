@@ -78,7 +78,7 @@ func respond(w http.ResponseWriter, status int, value any) {
 }
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	respond(w, 200, map[string]any{"status": "ok", "line_configured": s.Config.LINEEnabled,
-		"openrouter_configured": s.Config.ModelEnabled, "extension_analysis": s.Config.ModelEnabled, "response_mode": "go_fetch_clean_then_llm"})
+		"openrouter_configured": s.Config.ModelEnabled, "extension_analysis": s.Config.ModelEnabled, "extension_sites": []string{"104", "cake", "yourator", "1111", "yes123", "518"}, "response_mode": "go_fetch_clean_then_llm"})
 }
 func eventID(e line.Event) string {
 	if e.ID != "" {

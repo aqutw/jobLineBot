@@ -76,15 +76,15 @@ func (s *Server) extensionQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	snap := input.Snapshot
-	id, err := job104.ParseID(snap.URL)
-	if err != nil || id != snap.ID || snap.URL != "https://www.104.com.tw/job/"+id+"/" ||
+	reference, err := parseJobReference(snap.URL)
+	if err != nil || reference.ID != snap.ID || snap.URL != reference.URL ||
 		!utf8.ValidString(snap.Content) || len([]rune(snap.Content)) > 40000 ||
 		len([]rune(snap.Title)) > 300 || len([]rune(snap.Company)) > 300 || len([]rune(input.Preferences)) > 2000 ||
 		snap.CapturedAt.IsZero() || snap.CapturedAt.After(time.Now().Add(5*time.Minute)) {
 		respond(w, 400, map[string]string{"error": "invalid_snapshot"})
 		return
 	}
-	doc := job104.Document{ID: id, URL: snap.URL, Title: cleanSnapshotText(snap.Title), Company: cleanSnapshotText(snap.Company), Text: cleanSnapshotText(snap.Content), FetchedAt: snap.CapturedAt.UTC(), Source: "browser_snapshot_go_cleaned"}
+	doc := job104.Document{ID: reference.ID, URL: reference.URL, Title: cleanSnapshotText(snap.Title), Company: cleanSnapshotText(snap.Company), Text: cleanSnapshotText(snap.Content), FetchedAt: snap.CapturedAt.UTC(), Source: "browser_snapshot_go_cleaned"}
 	if doc.Title == "" || len([]rune(doc.Text)) < 80 {
 		respond(w, 400, map[string]string{"error": "snapshot_content_required"})
 		return
