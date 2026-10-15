@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"regexp"
 	"strings"
@@ -78,12 +79,18 @@ func New() (*Fetcher, error) {
 		req.Header.Set("Referer", "https://www.104.com.tw/jobs/search/")
 		req.Header.Set("Accept-Language", "zh-TW,zh;q=0.9")
 		req.Header.Set("Accept", "text/html,application/json;q=0.9,*/*;q=0.8")
+		if strings.Contains(req.URL.Path, "/ajax/") {
+			req.Header.Set("Accept", "application/json, text/plain, */*")
+			req.Header.Set("Referer", "https://www.104.com.tw/job/"+strings.TrimPrefix(req.URL.Path, "/job/ajax/content/")+"/")
+		}
 		resp, err := client.Do(req)
 		if err != nil {
+			slog.Warn("job104 transport failed", "path", req.URL.Path, "error", err.Error())
 			return nil, ErrUnavailable
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != 200 {
+			slog.Warn("job104 upstream rejected", "path", req.URL.Path, "status", resp.StatusCode)
 			return nil, ErrUnavailable
 		}
 		body, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024+1))
@@ -137,6 +144,7 @@ func (f *Fetcher) Fetch(ctx context.Context, id string) (Document, error) {
 		doc.Source = "html+104_content_api"
 	}
 	if doc.Title == "" || len([]rune(doc.Text)) < 80 {
+		slog.Warn("job104 content missing", "job_id", id, "bytes", len(body))
 		return Document{}, ErrUnavailable
 	}
 	runes := []rune(doc.Text)
